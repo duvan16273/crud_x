@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRUD App con SQLite</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        input {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        button.delete {
+            background-color: #f44336;
+        }
+
+        button.delete:hover {
+            background-color: #da190b;
+        }
+
+        button.edit {
+            background-color: #2196F3;
+        }
+
+        button.edit:hover {
+            background-color: #0b7dda;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .actions {
+            display: flex;
+            gap: 5px;
+        }
+
+        .error {
+            color: red;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+
+        .notification {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .success {
+            background-color: #dff0d8;
+            border: 1px solid #d6e9c6;
+            color: #3c763d;
+        }
+
+        .error-notification {
+            background-color: #f2dede;
+            border: 1px solid #ebccd1;
+            color: #a94442;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gestión de Usuarios</h1>
+        
+        <div id="notification" class="notification"></div>
+        
+        <form id="userForm">
+            <input type="hidden" id="userId">
+            <input type="text" id="name" placeholder="Nombre" required>
+            <input type="email" id="email" placeholder="Email" required>
+            <span id="emailError" class="error"></span>
+            <button type="submit" id="submitBtn">Guardar</button>
+        </form>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>Email</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="userList">
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        class UserManager {
+            constructor() {
+                this.API_URL = 'http://localhost:3000/api';
+                this.form = document.getElementById('userForm');
+                this.userList = document.getElementById('userList');
+                this.emailError = document.getElementById('emailError');
+                this.nameInput = document.getElementById('name');
+                this.emailInput = document.getElementById('email');
+                this.userIdInput = document.getElementById('userId');
+                this.submitBtn = document.getElementById('submitBtn');
+                this.notification = document.getElementById('notification');
+                
+                this.setupEventListeners();
+                this.loadUsers();
+            }
+
+            showNotification(message, isError = false) {
+                this.notification.textContent = message;
+                this.notification.className = `notification ${isError ? 'error-notification' : 'success'}`;
+                this.notification.style.display = 'block';
+                setTimeout(() => {
+                    this.notification.style.display = 'none';
+                }, 3000);
+            }
+
+            setupEventListeners() {
+                this.form.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    this.handleSubmit();
+                });
+            }
+
+            async loadUsers() {
+                try {
+                    const response = await fetch(`${this.API_URL}/users`);
+                    const users = await response.json();
+                    this.renderUsers(users);
+                } catch (error) {
+                    this.showNotification('Error al cargar usuarios: ' + error.message, true);
+                }
+            }
+
+            validateEmail(email) {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                return emailRegex.test(email);
+            }
+
+            async handleSubmit() {
+                const userId = this.userIdInput.value;
+                const name = this.nameInput.value;
+                const email = this.emailInput.value;
+
+                if (!this.validateEmail(email)) {
+                    this.emailError.textContent = 'Por favor, introduce un email válido';
+                    return;
+                }
+                this.emailError.textContent = '';
+
+                try {
+                    if (userId) {
+                        await this.updateUser(parseInt(userId), name, email);
+                    } else {
+                        await this.createUser(name, email);
+                    }
+                } catch (error) {
+                    this.showNotification(error.message, true);
+                }
+            }
+
+            resetForm() {
+                this.form.reset();
+                this.userIdInput.value = '';
+                this.submitBtn.textContent = 'Guardar';
+            }
+
+            async createUser(name, email) {
+                try {
+                    const response = await fetch(`${this.API_URL}/users`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ name, email })
+                    });
+
+                    if (!response.ok) throw new Error('Error al crear usuario');
+
+                    await this.loadUsers();
+                    this.resetForm();
+                    this.showNotification('Usuario creado exitosamente');
+                } catch (error) {
+                    throw new Error('Error al crear usuario: ' + error.message);
+                }
+            }
+
+            async updateUser(id, name, email) {
+                try {
+                    const response = await fetch(`${this.API_URL}/users/${id}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ name, email })
+                    });
+
+                    if (!response.ok) throw new Error('Error al actualizar usuario');
+
+                    await this.loadUsers();
+                    this.resetForm();
+                    this.showNotification('Usuario actualizado exitosamente');
+                } catch (error) {
+                    throw new Error('Error al actualizar usuario: ' + error.message);
+                }
+            }
+
+            async deleteUser(id) {
+                try {
+                    const response = await fetch(`${this.API_URL}/users/${id}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (!response.ok) throw new Error('Error al eliminar usuario');
+
+                    await this.loadUsers();
+                    this.showNotification('Usuario eliminado exitosamente');
+                } catch (error) {
+                    this.showNotification('Error al eliminar usuario: ' + error.message, true);
+                }
+            }
+
+            editUser(id, name, email) {
+                this.userIdInput.value = id;
+                this.nameInput.value = name;
+                this.emailInput.value = email;
+                this.submitBtn.textContent = 'Actualizar';
+            }
+
+            renderUsers(users) {
+                this.userList.innerHTML = users.map(user => `
+                    <tr>
+                        <td>${user.id}</td>
+                        <td>${user.name}</td>
+                        <td>${user.email}</td>
+                        <td class="actions">
+                            <button class="edit" onclick="userManager.editUser(${user.id}, '${user.name}', '${user.email}')">
+                                Editar
+                            </button>
+                            <button class="delete" onclick="userManager.deleteUser(${user.id})">
+                                Eliminar
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        const userManager = new UserManager();
+    </script>
+</body>
+</html>
